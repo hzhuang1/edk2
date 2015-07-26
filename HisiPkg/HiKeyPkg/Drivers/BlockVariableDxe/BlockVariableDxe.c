@@ -14,6 +14,7 @@
 
 **/
 
+#include <Guid/EventGroup.h>
 #include <Guid/VariableFormat.h>
 #include <Guid/SystemNvDataGuid.h>
 
@@ -26,11 +27,16 @@
 #include <Library/PcdLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
+#include <Library/UefiRuntimeLib.h>
 
 #include "BlockVariableDxe.h"
 
 
 STATIC EFI_PHYSICAL_ADDRESS      mMapNvStorageVariableBase;
+STATIC EFI_EVENT                 mBlockVariableVirtualAddrChangeEvent;
+STATIC VOID                      *mDataPtr;
+
+STATIC BLOCK_VARIABLE_INSTANCE   mBlockVariableInstance;
 
 EFI_STATUS
 EFIAPI
@@ -54,7 +60,8 @@ FvbGetAttributes (
 
   *Attributes = FvbAttributes;
 
-  DEBUG ((DEBUG_BLKIO, "FvbGetAttributes(0x%X)\n", *Attributes));
+  if (!EfiAtRuntime ())
+    DEBUG ((DEBUG_BLKIO, "FvbGetAttributes(0x%X)\n", *Attributes));
   return EFI_SUCCESS;
 }
 
@@ -65,7 +72,8 @@ FvbSetAttributes(
   IN OUT    EFI_FVB_ATTRIBUTES_2                 *Attributes
   )
 {
-  DEBUG ((DEBUG_BLKIO, "FvbSetAttributes(0x%X) is not supported\n",*Attributes));
+  if (!EfiAtRuntime ())
+    DEBUG ((DEBUG_BLKIO, "FvbSetAttributes(0x%X) is not supported\n",*Attributes));
   return EFI_UNSUPPORTED;
 }
 
@@ -111,29 +119,24 @@ FvbRead (
   EFI_BLOCK_IO_PROTOCOL         *BlockIo;
   EFI_STATUS                    Status;
   UINTN                         Bytes;
-  VOID                          *DataPtr;
 
   Instance = CR (This, BLOCK_VARIABLE_INSTANCE, FvbProtocol, BLOCK_VARIABLE_SIGNATURE);
   BlockIo = Instance->BlockIoProtocol;
   Bytes = (Offset + *NumBytes + Instance->Media.BlockSize - 1) / Instance->Media.BlockSize * Instance->Media.BlockSize;
-  DataPtr = AllocateZeroPool (Bytes);
-  if (DataPtr == NULL) {
-    DEBUG ((EFI_D_ERROR, "FvbWrite: failed to allocate buffer.\n"));
-    return EFI_BUFFER_TOO_SMALL;
-  }
-  WriteBackDataCacheRange (DataPtr, Bytes);
+  WriteBackDataCacheRange (mDataPtr, Bytes);
   InvalidateDataCacheRange (Buffer, *NumBytes);
   Status = BlockIo->ReadBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
-		                Bytes, DataPtr);
+		                Bytes, mDataPtr);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "FvbRead StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
-	    Instance->StartLba, Lba, Offset, Status));
+    if (!EfiAtRuntime ()) {
+      DEBUG ((EFI_D_ERROR, "FvbRead StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
+              Instance->StartLba, Lba, Offset, Status));
+    }
     goto exit;
   }
-  CopyMem (Buffer, DataPtr + Offset, *NumBytes);
+  CopyMem (Buffer, mDataPtr + Offset, *NumBytes);
   WriteBackDataCacheRange (Buffer, *NumBytes);
 exit:
-  FreePool (DataPtr);
   return Status;
 }
 
@@ -151,41 +154,41 @@ FvbWrite (
   EFI_BLOCK_IO_PROTOCOL         *BlockIo;
   EFI_STATUS                    Status;
   UINTN                         Bytes;
-  VOID                          *DataPtr;
 
   Instance = CR (This, BLOCK_VARIABLE_INSTANCE, FvbProtocol, BLOCK_VARIABLE_SIGNATURE);
   BlockIo = Instance->BlockIoProtocol;
   Bytes = (Offset + *NumBytes + Instance->Media.BlockSize - 1) / Instance->Media.BlockSize * Instance->Media.BlockSize;
-  DataPtr = AllocateZeroPool (Bytes);
-  if (DataPtr == NULL) {
-    DEBUG ((EFI_D_ERROR, "FvbWrite: failed to allocate buffer.\n"));
-    return EFI_BUFFER_TOO_SMALL;
-  }
-  WriteBackDataCacheRange (DataPtr, Bytes);
+  WriteBackDataCacheRange (mDataPtr, Bytes);
   Status = BlockIo->ReadBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
-                                Bytes, DataPtr);
+                                Bytes, mDataPtr);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "FvbWrite: failed on reading blocks.\n"));
+    if (!EfiAtRuntime ()) {
+      DEBUG ((EFI_D_ERROR, "FvbWrite: failed on reading blocks.\n"));
+    }
     goto exit;
   }
-  CopyMem (DataPtr + Offset, Buffer, *NumBytes);
-  WriteBackDataCacheRange (DataPtr, Bytes);
+  InvalidateDataCacheRange (mDataPtr, Bytes);
+  CopyMem (mDataPtr + Offset, Buffer, *NumBytes);
+  WriteBackDataCacheRange (mDataPtr, Bytes);
   Status = BlockIo->WriteBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
-                                 Bytes, DataPtr);
+                                 Bytes, mDataPtr);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "FvbWrite StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
-            Instance->StartLba, Lba, Offset, Status));
+    if (!EfiAtRuntime ()) {
+      DEBUG ((EFI_D_ERROR, "FvbWrite StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
+              Instance->StartLba, Lba, Offset, Status));
+    }
   }
   // Sometimes the variable isn't flushed into block device if it's the last flush operation.
   // So flush it again.
   Status = BlockIo->WriteBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
-                                 Bytes, DataPtr);
+                                 Bytes, mDataPtr);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "FvbWrite StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
-            Instance->StartLba, Lba, Offset, Status));
+    if (!EfiAtRuntime ()) {
+      DEBUG ((EFI_D_ERROR, "FvbWrite StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
+              Instance->StartLba, Lba, Offset, Status));
+    }
   }
 exit:
-  FreePool (DataPtr);
   return Status;
 }
 
@@ -343,6 +346,21 @@ InitNonVolatileVariableStore (
   return Status;
 }
 
+VOID
+EFIAPI
+BlockVariableVirtualNotifyEvent (
+  IN EFI_EVENT                    Event,
+  IN VOID                         *Context
+  )
+{
+  EfiConvertPointer (0x0, (VOID**)&mMapNvStorageVariableBase);
+  EfiConvertPointer (0x0, (VOID**)&mDataPtr);
+  EfiConvertPointer (0x0, (VOID**)&(mBlockVariableInstance.BlockIoProtocol));
+  EfiConvertPointer (0x0, (VOID**)&(mBlockVariableInstance.BlockIoProtocol->ReadBlocks));
+  EfiConvertPointer (0x0, (VOID**)&(mBlockVariableInstance.BlockIoProtocol->WriteBlocks));
+  EfiConvertPointer (0x0, (VOID**)&(mBlockVariableInstance.BlockIoProtocol->Media));
+}
+
 EFI_STATUS
 BlockVariableDxeInitialize (
   IN EFI_HANDLE                   ImageHandle,
@@ -380,6 +398,18 @@ BlockVariableDxeInitialize (
   }
   NvStorageData = (UINT8 *) (UINTN) PcdGet32(PcdFlashNvStorageVariableBase);
   mMapNvStorageVariableBase = PcdGet32(PcdFlashNvStorageVariableBase);
+  Status = gBS->AllocatePages (AllocateAddress, EfiRuntimeServicesCode, EFI_SIZE_TO_PAGES (NvStorageSize), &mMapNvStorageVariableBase);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "Warning: Couldn't allocate memory for mirrored NvStorageVariable (status: %r)\n", Status));
+    return EFI_INVALID_PARAMETER;
+  }
+
+  mDataPtr = AllocateRuntimeZeroPool (NvStorageSize);
+  if (mDataPtr == NULL) {
+    DEBUG ((EFI_D_ERROR, "%a: failed to allocate buffer.\n", __func__));
+    return EFI_BUFFER_TOO_SMALL;
+  }
+
   NvBlockDevicePath = &Instance->DevicePath;
   NvBlockDevicePath = ConvertTextToDevicePath ((CHAR16*)FixedPcdGetPtr (PcdNvStorageVariableBlockDevicePath));
   Status = gBS->LocateDevicePath (&gEfiBlockIoProtocolGuid, &NvBlockDevicePath,
@@ -432,6 +462,16 @@ BlockVariableDxeInitialize (
       goto exit;
     }
   }
+
+  Status = gBS->CreateEventEx (
+                  EVT_NOTIFY_SIGNAL,
+                  TPL_NOTIFY,
+                  BlockVariableVirtualNotifyEvent,
+                  NULL,
+                  &gEfiEventVirtualAddressChangeGuid,
+                  &mBlockVariableVirtualAddrChangeEvent
+                  );
+  ASSERT_EFI_ERROR (Status);
 
   if (NvStorageSize > ((EFI_FIRMWARE_VOLUME_HEADER*)Headers)->FvLength) {
     NvStorageSize = ((EFI_FIRMWARE_VOLUME_HEADER*)Headers)->FvLength;
