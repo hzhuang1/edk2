@@ -24,6 +24,8 @@
 
 #define TICKS_PER_MICRO_SEC     (PcdGet32 (PcdArmArchTimerFreqInHz)/1000000U)
 
+STATIC UINTN      mTimerFreq;
+
 RETURN_STATUS
 EFIAPI
 TimerConstructor (
@@ -59,6 +61,7 @@ TimerConstructor (
         ArmGenericTimerSetTimerFreq (PcdGet32 (PcdArmArchTimerFreqInHz));
       }
 #endif
+      mTimerFreq = (UINTN)(PcdGet32 (PcdArmArchTimerFreqInHz));
     }
 
     //
@@ -106,9 +109,10 @@ MicroSecondDelay (
   MultU64xN = MultU64x64;
 #endif
 
-  TimerFreq = PcdGet32 (PcdArmArchTimerFreqInHz);
-  if (TimerFreq == 0) {
+  if (mTimerFreq == 0) {
     TimerFreq = ArmGenericTimerGetTimerFreq ();
+  } else {
+    TimerFreq = mTimerFreq;
   }
 
   // Calculate counter ticks that can represent requested delay:
