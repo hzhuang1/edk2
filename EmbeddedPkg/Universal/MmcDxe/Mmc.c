@@ -13,15 +13,21 @@
 
 **/
 
+#include <Guid/EventGroup.h>
+
 #include <Protocol/DevicePath.h>
 
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
+#include <Library/UefiRuntimeLib.h>
 #include <Library/DevicePathLib.h>
 
 #include "Mmc.h"
+
+STATIC EFI_EVENT                 mMmcVirtualAddrChangeEvent;
+EFI_PHYSICAL_ADDRESS             mMmcMapNvStorageVariableBase;
 
 EFI_BLOCK_IO_MEDIA mMmcMediaTemplate = {
   SIGNATURE_32('m','m','c','o'),            // MediaId
@@ -82,6 +88,26 @@ RemoveMmcHost (
   RemoveEntryList (&(MmcHostInstance->Link));
 }
 
+VOID
+EFIAPI
+MmcVirtualNotifyEvent (
+  IN EFI_EVENT                    Event,
+  IN VOID                         *Context
+  )
+{
+  LIST_ENTRY             *CurrentLink;
+  MMC_HOST_INSTANCE      *MmcHostInstance;
+
+  EfiConvertPointer (0x0, (VOID**)&mMmcMapNvStorageVariableBase);
+  CurrentLink = mMmcHostPool.ForwardLink;
+  while (CurrentLink != NULL && CurrentLink != &mMmcHostPool) {
+    MmcHostInstance = MMC_HOST_INSTANCE_FROM_LINK(CurrentLink);
+    EfiConvertPointer (0x0, (VOID**)&(MmcHostInstance->MmcHost));
+
+    CurrentLink = CurrentLink->ForwardLink;
+  }
+}
+
 MMC_HOST_INSTANCE* CreateMmcHostInstance (
   IN EFI_MMC_HOST_PROTOCOL* MmcHost
   )
@@ -91,7 +117,7 @@ MMC_HOST_INSTANCE* CreateMmcHostInstance (
   EFI_DEVICE_PATH_PROTOCOL    *NewDevicePathNode;
   EFI_DEVICE_PATH_PROTOCOL    *DevicePath;
 
-  MmcHostInstance = AllocateZeroPool (sizeof (MMC_HOST_INSTANCE));
+  MmcHostInstance = AllocateRuntimeZeroPool (sizeof (MMC_HOST_INSTANCE));
   if (MmcHostInstance == NULL) {
     return NULL;
   }
@@ -100,7 +126,7 @@ MMC_HOST_INSTANCE* CreateMmcHostInstance (
 
   MmcHostInstance->State = MmcHwInitializationState;
 
-  MmcHostInstance->BlockIo.Media = AllocateCopyPool (sizeof(EFI_BLOCK_IO_MEDIA), &mMmcMediaTemplate);
+  MmcHostInstance->BlockIo.Media = AllocateRuntimeCopyPool (sizeof(EFI_BLOCK_IO_MEDIA), &mMmcMediaTemplate);
   if (MmcHostInstance->BlockIo.Media == NULL) {
     goto FREE_INSTANCE;
   }
@@ -119,7 +145,7 @@ MMC_HOST_INSTANCE* CreateMmcHostInstance (
     goto FREE_MEDIA;
   }
 
-  DevicePath = (EFI_DEVICE_PATH_PROTOCOL *) AllocatePool (END_DEVICE_PATH_LENGTH);
+  DevicePath = (EFI_DEVICE_PATH_PROTOCOL *) AllocateRuntimePool (END_DEVICE_PATH_LENGTH);
   if (DevicePath == NULL) {
     goto FREE_MEDIA;
   }
@@ -443,6 +469,18 @@ MmcDxeInitialize (
                 NULL,
                 &gCheckCardsEvent);
   ASSERT_EFI_ERROR (Status);
+
+  Status = gBS->CreateEventEx (
+                  EVT_NOTIFY_SIGNAL,
+                  TPL_NOTIFY,
+                  MmcVirtualNotifyEvent,
+                  NULL,
+                  &gEfiEventVirtualAddressChangeGuid,
+                  &mMmcVirtualAddrChangeEvent
+                  );
+  ASSERT_EFI_ERROR (Status);
+
+  mMmcMapNvStorageVariableBase = 0x30000000;
 
   Status = gBS->SetTimer(
                 gCheckCardsEvent,

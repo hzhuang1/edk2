@@ -14,6 +14,7 @@
 
 #include <Library/BaseMemoryLib.h>
 #include <Library/TimerLib.h>
+#include <Library/UefiRuntimeLib.h>
 
 #include "Mmc.h"
 
@@ -159,7 +160,9 @@ MmcTransferBlock (
 
   Status = MmcHost->SendCommand (MmcHost, Cmd, CmdArg);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "MmcIoBlocks(MMC_CMD%d): Error %r\n", Cmd & 0x3F, Status));
+    if (!EfiAtRuntime ()) {
+      DEBUG ((EFI_D_ERROR, "MmcIoBlocks(MMC_CMD%d): Error %r\n", Cmd & 0x3F, Status));
+    }
     return Status;
   }
 
@@ -167,20 +170,26 @@ MmcTransferBlock (
     // Read one block of Data
     Status = MmcHost->ReadBlockData (MmcHost, Lba, BufferSize, Buffer);
     if (EFI_ERROR (Status)) {
-      DEBUG ((EFI_D_BLKIO, "MmcIoBlocks(): Error Read Block Data and Status = %r\n", Status));
+      if (!EfiAtRuntime()) {
+        DEBUG ((EFI_D_BLKIO, "MmcIoBlocks(): Error Read Block Data and Status = %r\n", Status));
+      }
       MmcStopTransmission (MmcHost);
       return Status;
     }
     Status = MmcNotifyState (MmcHostInstance, MmcProgrammingState);
     if (EFI_ERROR (Status)) {
-      DEBUG ((EFI_D_ERROR, "MmcIoBlocks() : Error MmcProgrammingState\n"));
+      if (!EfiAtRuntime ()) {
+        DEBUG ((EFI_D_ERROR, "MmcIoBlocks() : Error MmcProgrammingState\n"));
+      }
       return Status;
     }
   } else {
     // Write one block of Data
     Status = MmcHost->WriteBlockData (MmcHost, Lba, BufferSize, Buffer);
     if (EFI_ERROR (Status)) {
-      DEBUG ((EFI_D_BLKIO, "MmcIoBlocks(): Error Write Block Data and Status = %r\n", Status));
+      if (!EfiAtRuntime ()) {
+        DEBUG ((EFI_D_BLKIO, "MmcIoBlocks(): Error Write Block Data and Status = %r\n", Status));
+      }
       MmcStopTransmission (MmcHost);
       return Status;
     }
@@ -205,7 +214,9 @@ MmcTransferBlock (
 
   Status = MmcNotifyState (MmcHostInstance, MmcTransferState);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "MmcIoBlocks() : Error MmcTransferState\n"));
+    if (!EfiAtRuntime ()) {
+      DEBUG ((EFI_D_ERROR, "MmcIoBlocks() : Error MmcTransferState\n"));
+    }
     return Status;
   }
   return Status;
@@ -296,7 +307,9 @@ MmcIoBlocks (
     }
 
     if (0 == Timeout) {
-      DEBUG ((EFI_D_ERROR, "The Card is busy\n"));
+      if (!EfiAtRuntime ()) {
+        DEBUG ((EFI_D_ERROR, "The Card is busy\n"));
+      }
       return EFI_NOT_READY;
     }
 
@@ -320,7 +333,9 @@ MmcIoBlocks (
       }
 
       if (0 == Timeout) {
-        DEBUG ((EFI_D_ERROR, "The Card is busy\n"));
+        if (!EfiAtRuntime ()) {
+          DEBUG ((EFI_D_ERROR, "The Card is busy\n"));
+        }
         return EFI_NOT_READY;
       }
 
@@ -335,12 +350,16 @@ MmcIoBlocks (
       Status = MmcTransferBlock (This, Cmd, Transfer, MediaId, Lba,
 				 BlockCount * This->Media->BlockSize, Buffer);
       if (EFI_ERROR (Status)) {
-	DEBUG ((EFI_D_ERROR, "Failed to transfer data with dma\n"));
+        if (!EfiAtRuntime ()) {
+	  DEBUG ((EFI_D_ERROR, "Failed to transfer data with dma\n"));
+        }
 	return EFI_NOT_READY;
       }
       Status = MmcHost->SendCommand (MmcHost, MMC_CMD12, 0);
       if (EFI_ERROR (Status)) {
-        DEBUG ((EFI_D_ERROR, "%a(MMC_CMD12): Error and Status = %r\n", Status));
+        if (!EfiAtRuntime ()) {
+          DEBUG ((EFI_D_ERROR, "%a(MMC_CMD12): Error and Status = %r\n", Status));
+        }
         return Status;
       }
       BytesRemainingToBeTransfered -= BlockCount * This->Media->BlockSize;
@@ -356,7 +375,9 @@ MmcIoBlocks (
       Status = MmcTransferBlock (This, Cmd, Transfer, MediaId, Lba,
 		      		 This->Media->BlockSize, Buffer);
       if (EFI_ERROR (Status)) {
-	DEBUG ((EFI_D_ERROR, "Failed to transfer data without dma\n"));
+        if (!EfiAtRuntime ()) {
+	  DEBUG ((EFI_D_ERROR, "Failed to transfer data without dma\n"));
+        }
 	return EFI_NOT_READY;
       }
       BytesRemainingToBeTransfered -= This->Media->BlockSize;
