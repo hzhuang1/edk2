@@ -25,6 +25,7 @@
 
 #include <Library/UefiLib.h>
 #include <Library/DebugLib.h>
+#include <Library/PrintLib.h>
 
 #define MMC_TRACE(txt)  DEBUG((EFI_D_BLKIO, "MMC: " txt "\n"))
 
@@ -356,6 +357,7 @@ extern EFI_COMPONENT_NAME2_PROTOCOL gMmcComponentName2;
 extern EFI_DRIVER_DIAGNOSTICS2_PROTOCOL gMmcDriverDiagnostics2;
 
 extern LIST_ENTRY mMmcHostPool;
+extern EFI_PHYSICAL_ADDRESS             mMmcMapNvStorageVariableBase;
 
 /**
   Reset the block device.
