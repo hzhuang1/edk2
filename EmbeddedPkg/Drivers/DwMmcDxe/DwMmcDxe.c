@@ -14,15 +14,19 @@
 
 **/
 
+#include <Guid/EventGroup.h>
+
 #include <Library/BaseMemoryLib.h>
 #include <Library/CacheMaintenanceLib.h>
 #include <Library/DebugLib.h>
 #include <Library/DevicePathLib.h>
+#include <Library/DxeServicesTableLib.h>
 #include <Library/IoLib.h>
 #include <Library/PcdLib.h>
 #include <Library/TimerLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
+#include <Library/UefiRuntimeLib.h>
 #include <Library/UncachedMemoryAllocationLib.h>
 #include <Protocol/MmcHost.h>
 
@@ -34,6 +38,7 @@
 #define DWMMC_DESC_PAGE		1
 #define DWMMC_BLOCK_SIZE	512
 #define DWMMC_DMA_BUF_SIZE	(512 * 8)
+#define DWMMC_MAX_DESC_PAGES    1024
 
 //#define EARLY_DUMP
 //#define INIT_DUMP
@@ -53,6 +58,11 @@ EFI_MMC_HOST_PROTOCOL     *gpMmcHost;
 EFI_GUID mDwMmcDevicePathGuid = EFI_CALLER_ID_GUID;
 STATIC UINT32 mDwMmcCommand;
 STATIC UINT32 mDwMmcArgument;
+EFI_PHYSICAL_ADDRESS      mDwMmcRegisterBase;
+STATIC EFI_EVENT          mDwMmcVirtualAddrChangeEvent;
+STATIC EFI_PHYSICAL_ADDRESS     mDwMmcMapNvStorageVariableBase;
+STATIC DWMMC_IDMAC_DESCRIPTOR   *mIdmacDesc, *mVirtIdmacDesc;
+STATIC EFI_PHYSICAL_ADDRESS     mPeriRegisterBase;
 
 EFI_STATUS
 DwMmcReadBlockData (
@@ -101,7 +111,7 @@ DwMmcIsDmaSupported (
   IN EFI_MMC_HOST_PROTOCOL     *This
   )
 {
-  return TRUE;
+  return FALSE;
 }
 
 EFI_STATUS
@@ -241,7 +251,7 @@ DwMmcNotifyState (
 //    MmioWrite32 (DWMMC_DEBNCE, 0x00ffffff);
 
 #ifdef INIT_DUMP
-  Buffer = UncachedAllocatePages (2);
+  Buffer = UncachedAllocateRuntimePages (2);
   if (Buffer == NULL)
     return EFI_BUFFER_TOO_SMALL;
   DwMmcReadBlockData (NULL, 0, 512, Buffer);
@@ -304,7 +314,12 @@ SendCommand (
   IN UINT32                     Argument
   )
 {
-  UINT32      Data, ErrMask;
+  UINT32      Data, ErrMask;//, Index;
+#if 0
+  CHAR8                   *Buf;
+
+  Buf = (CHAR8*)(mDwMmcMapNvStorageVariableBase + 0x5200);
+#endif
 
   // Wait until MMC is idle
   do {
@@ -315,12 +330,26 @@ SendCommand (
   MmioWrite32 (DWMMC_CMDARG, Argument);
   MmioWrite32 (DWMMC_CMD, MmcCmd);
 
-  ErrMask = DWMMC_INT_EBE | DWMMC_INT_HLE | DWMMC_INT_RTO |
+  if (EfiAtRuntime ()) {
+    ErrMask = DWMMC_INT_EBE | DWMMC_INT_HLE |
             DWMMC_INT_RCRC | DWMMC_INT_RE;
+  } else {
+    ErrMask = DWMMC_INT_EBE | DWMMC_INT_HLE | DWMMC_INT_RTO |
+            DWMMC_INT_RCRC | DWMMC_INT_RE;
+  }
   ErrMask |= DWMMC_INT_DCRC | DWMMC_INT_DRT | DWMMC_INT_SBE;
   do {
-    MicroSecondDelay(500);
+    MicroSecondDelay (500);
     Data = MmioRead32 (DWMMC_RINTSTS);
+
+#if 0
+  if (EfiAtRuntime()) {
+    AsciiSPrint (Buf, 0x1000, "Data:0x%x\n", Data);
+    Buf += 0x20;
+    AsciiSPrint (Buf, 0x1000, "ErrMask:0x%x\n", ErrMask);
+    Buf += 0x20;
+  }
+#endif
 
     if (Data & ErrMask)
       return EFI_DEVICE_ERROR;
@@ -329,6 +358,10 @@ SendCommand (
   } while (!(Data & DWMMC_INT_CMD_DONE));
   return EFI_SUCCESS;
 }
+
+//STATIC UINT32 mCmd = 0;
+STATIC UINT32 mRTCmd = 0;
+STATIC UINT32 mIndex = 0;
 
 EFI_STATUS
 DwMmcSendCommand (
@@ -339,7 +372,30 @@ DwMmcSendCommand (
 {
   UINT32       Cmd = 0;
   EFI_STATUS   Status = EFI_SUCCESS;
+  UINT32       Data;
 
+  CHAR8  *Buf;
+  UINT32 CIndex;
+
+    Data = MmioRead32 (DWMMC_CTRL);
+    Data |= DWMMC_CTRL_FIFO_RESET;
+    MmioWrite32 (DWMMC_CTRL, Data);
+    while (MmioRead32 (DWMMC_CTRL) & DWMMC_CTRL_FIFO_RESET) {
+    };
+  if (EfiAtRuntime ())
+    mRTCmd++;
+  Buf = (CHAR8*)(mDwMmcMapNvStorageVariableBase + 0x5000);
+  if (EfiAtRuntime ()) {
+    CIndex = AsciiSPrint (Buf + mIndex, 0x1000, "Cmd:[%d]%d Arg:0x%x\n", mRTCmd, MMC_GET_INDX(MmcCmd), Argument);
+    mIndex += CIndex;
+    CIndex = AsciiSPrint (Buf + mIndex, 0x1000, "MMC_STATUS:0x%x, MMC_IDSTS:0x%x, RINTSTS:0x%x\n", MmioRead32 (DWMMC_STATUS), MmioRead32 (DWMMC_IDSTS), MmioRead32 (DWMMC_RINTSTS));
+    mIndex += CIndex;
+    CIndex = AsciiSPrint (Buf + mIndex, 0x1000, "CLKENA:0x%x, CTRL:0x%x, TMOUT:0x%x\n", MmioRead32 (DWMMC_CLKENA), MmioRead32 (DWMMC_CTRL), MmioRead32 (DWMMC_TMOUT));
+    mIndex += CIndex;
+  } else {
+    //DEBUG ((EFI_D_ERROR, "Cmd:%d CLKSTAT12:0x%x\n", mCmd++, MmioRead32 (mPeriRegisterBase + 0x278)));
+    //DEBUG ((EFI_D_ERROR, "Cmd:0x%x, STATUS:0x%x\n", MMC_GET_INDX(MmcCmd), MmioRead32 (DWMMC_STATUS)));
+  }
   switch (MMC_GET_INDX(MmcCmd)) {
   case MMC_INDX(0):
     Cmd = BIT_CMD_SEND_INIT;
@@ -405,7 +461,12 @@ DwMmcSendCommand (
     mDwMmcArgument = Argument;
   } else {
     Status = SendCommand (Cmd, Argument);
+    if (EFI_ERROR (Status) && EfiAtRuntime ()) {
+      CIndex = AsciiSPrint (Buf + mIndex, 0x1000, "[%d] CmdReg:0x%x, Status:0x%x\n", mRTCmd, MmioRead32 (DWMMC_CMD), Status);
+      mIndex += CIndex;
+    }
   }
+//DEBUG ((EFI_D_ERROR, "#1"));
   return Status;
 }
 
@@ -451,25 +512,25 @@ PrepareDmaData (
   Length = DWMMC_BLOCK_SIZE * Blks;
 
   for (Idx = 0; Idx < Cnt; Idx++) {
-    (IdmacDesc + Idx)->Des0 = DWMMC_IDMAC_DES0_OWN | DWMMC_IDMAC_DES0_CH |
+    (mVirtIdmacDesc + Idx)->Des0 = DWMMC_IDMAC_DES0_OWN | DWMMC_IDMAC_DES0_CH |
 	    		      DWMMC_IDMAC_DES0_DIC;
-    (IdmacDesc + Idx)->Des1 = DWMMC_IDMAC_DES1_BS1(DWMMC_DMA_BUF_SIZE);
+    (mVirtIdmacDesc + Idx)->Des1 = DWMMC_IDMAC_DES1_BS1(DWMMC_DMA_BUF_SIZE);
     /* Buffer Address */
-    (IdmacDesc + Idx)->Des2 = (UINT32)((UINTN)Buffer + DWMMC_DMA_BUF_SIZE * Idx);
+    (mVirtIdmacDesc + Idx)->Des2 = (UINT32)((UINTN)Buffer + DWMMC_DMA_BUF_SIZE * Idx);
     /* Next Descriptor Address */
-    (IdmacDesc + Idx)->Des3 = (UINT32)((UINTN)IdmacDesc +
+    (mVirtIdmacDesc + Idx)->Des3 = (UINT32)((UINTN)IdmacDesc +
    	                               (sizeof(DWMMC_IDMAC_DESCRIPTOR) * (Idx + 1)));
   }
   /* First Descriptor */
-  IdmacDesc->Des0 |= DWMMC_IDMAC_DES0_FS;
+  mVirtIdmacDesc->Des0 |= DWMMC_IDMAC_DES0_FS;
   /* Last Descriptor */
   LastIdx = Cnt - 1;
-  (IdmacDesc + LastIdx)->Des0 |= DWMMC_IDMAC_DES0_LD;
-  (IdmacDesc + LastIdx)->Des0 &= ~(DWMMC_IDMAC_DES0_DIC | DWMMC_IDMAC_DES0_CH);
-  (IdmacDesc + LastIdx)->Des1 = DWMMC_IDMAC_DES1_BS1(Length -
+  (mVirtIdmacDesc + LastIdx)->Des0 |= DWMMC_IDMAC_DES0_LD;
+  (mVirtIdmacDesc + LastIdx)->Des0 &= ~(DWMMC_IDMAC_DES0_DIC | DWMMC_IDMAC_DES0_CH);
+  (mVirtIdmacDesc + LastIdx)->Des1 = DWMMC_IDMAC_DES1_BS1(Length -
    		                (LastIdx * DWMMC_DMA_BUF_SIZE));
   /* Set the Next field of Last Descriptor */
-  (IdmacDesc + LastIdx)->Des3 = 0;
+  (mVirtIdmacDesc + LastIdx)->Des3 = 0;
   MmioWrite32 (DWMMC_DBADDR, (UINT32)((UINTN)IdmacDesc));
 
   Data = MmioRead32 (DWMMC_CTRL);
@@ -493,27 +554,42 @@ DwMmcReadBlockData (
   IN UINT32*                   Buffer
   )
 {
+#ifdef ALLOC_DESC_PAGE
   DWMMC_IDMAC_DESCRIPTOR*  IdmacDesc;
-  EFI_STATUS  Status;
   UINT32      DescPages, CountPerPage, Count;
+#else
+  //CHAR8                   *Buf;
+#endif
+  EFI_STATUS  Status;
 #ifdef DUMP_BUF
   CHAR8       CBuffer[100];
   UINTN       CharCount, Idx;
 #endif
 
+#ifndef ALLOC_DESC_PAGE
+  //Buf = (CHAR8*)(mDwMmcMapNvStorageVariableBase + 0x5000);
+#endif
+#ifdef ALLOC_DESC_PAGE
   CountPerPage = EFI_PAGE_SIZE / 16;
   Count = (Length + DWMMC_DMA_BUF_SIZE - 1) / DWMMC_DMA_BUF_SIZE;
   DescPages = (Count + CountPerPage - 1) / CountPerPage;
 
-  IdmacDesc = (DWMMC_IDMAC_DESCRIPTOR *)UncachedAllocatePages (DescPages);
+  IdmacDesc = (DWMMC_IDMAC_DESCRIPTOR *)UncachedAllocateRuntimePages (DescPages);
   if (IdmacDesc == NULL)
     return EFI_BUFFER_TOO_SMALL;
+#endif
 
   InvalidateDataCacheRange (Buffer, Length);
 
+#ifdef ALLOC_DESC_PAGE
   Status = PrepareDmaData (IdmacDesc, Length, Buffer);
   if (EFI_ERROR (Status))
     goto out;
+#else
+  Status = PrepareDmaData (mIdmacDesc, Length, Buffer);
+  if (EFI_ERROR (Status))
+    goto out;
+#endif
 
 #if defined(EARLY_DUMP) || defined(INIT_DUMP) || defined(HACK_CMD8_DUMP)
   Status = SendCommand (17 | BIT_CMD_RESPONSE_EXPECT | BIT_CMD_CHECK_RESPONSE_CRC |
@@ -521,8 +597,16 @@ DwMmcReadBlockData (
 		  BIT_CMD_USE_HOLD_REG | BIT_CMD_START, Lba);
 #else
   Status = SendCommand (mDwMmcCommand, mDwMmcArgument);
+/*
+  if (EfiAtRuntime()) {
+    AsciiSPrint (Buf, 0x1000, "Sendcommand, Status:%x\n", Status);
+    Buf += 0x30;
+  }
+*/
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "Failed to read data, mDwMmcCommand:%x, mDwMmcArgument:%x, Status:%r\n", mDwMmcCommand, mDwMmcArgument, Status));
+    if (!EfiAtRuntime()) {
+      DEBUG ((EFI_D_ERROR, "Failed to read data, mDwMmcCommand:%x, mDwMmcArgument:%x, Status:%r\n", mDwMmcCommand, mDwMmcArgument, Status));
+    }
     return Status;
   }
 #endif
@@ -536,7 +620,10 @@ DwMmcReadBlockData (
   }
 #endif
 out:
+  MicroSecondDelay (500);
+#ifdef ALLOC_DESC_PAGE
   UncachedFreePages (IdmacDesc, DescPages);
+#endif
   return Status;
 }
 
@@ -548,26 +635,39 @@ DwMmcWriteBlockData (
   IN UINT32*                    Buffer
   )
 {
+#ifdef ALLOC_DESC_PAGE
   DWMMC_IDMAC_DESCRIPTOR*  IdmacDesc;
-  EFI_STATUS  Status;
   UINT32      DescPages, CountPerPage, Count;
+#endif
+  EFI_STATUS  Status;
 
+#ifdef ALLOC_DESC_PAGE
   CountPerPage = EFI_PAGE_SIZE / 16;
   Count = (Length + DWMMC_DMA_BUF_SIZE - 1) / DWMMC_DMA_BUF_SIZE;
   DescPages = (Count + CountPerPage - 1) / CountPerPage;
-  IdmacDesc = (DWMMC_IDMAC_DESCRIPTOR *)UncachedAllocatePages (DescPages);
+  IdmacDesc = (DWMMC_IDMAC_DESCRIPTOR *)UncachedAllocateRuntimePages (DescPages);
   if (IdmacDesc == NULL)
     return EFI_BUFFER_TOO_SMALL;
+#endif
 
   WriteBackDataCacheRange (Buffer, Length);
 
+#ifdef ALLOC_DESC_PAGE
   Status = PrepareDmaData (IdmacDesc, Length, Buffer);
   if (EFI_ERROR (Status))
     goto out;
+#else
+  Status = PrepareDmaData (mIdmacDesc, Length, Buffer);
+  if (EFI_ERROR (Status))
+    goto out;
+#endif
 
   Status = SendCommand (mDwMmcCommand, mDwMmcArgument);
 out:
+  MicroSecondDelay (500);
+#ifdef ALLOC_DESC_PAGE
   UncachedFreePages (IdmacDesc, DescPages);
+#endif
   return Status;
 }
 
@@ -632,6 +732,19 @@ EFI_MMC_HOST_PROTOCOL gMciHost = {
   DwMmcSetIos
 };
 
+VOID
+EFIAPI
+DwMmcVirtualNotifyEvent (
+  IN EFI_EVENT                    Event,
+  IN VOID                         *Context
+  )
+{
+  EfiConvertPointer (0x0, (VOID**)&mDwMmcRegisterBase);
+  EfiConvertPointer (0x0, (VOID**)&mDwMmcMapNvStorageVariableBase);
+  EfiConvertPointer (0x0, (VOID**)&mVirtIdmacDesc);
+  EfiConvertPointer (0x0, (VOID**)&mPeriRegisterBase);
+}
+
 EFI_STATUS
 DwMmcDxeInitialize (
   IN EFI_HANDLE         ImageHandle,
@@ -645,9 +758,40 @@ DwMmcDxeInitialize (
 #endif
 
   Handle = NULL;
+  mDwMmcRegisterBase = PcdGet32 (PcdDwMmcBaseAddress);
+
+  // Declare the controller as EFI_MEMORY_RUNTIME
+  Status = gDS->AddMemorySpace (
+                  EfiGcdMemoryTypeMemoryMappedIo,
+                  mDwMmcRegisterBase, SIZE_4KB,
+                  EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
+                  );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = gDS->SetMemorySpaceAttributes (mDwMmcRegisterBase, SIZE_4KB, EFI_MEMORY_UC | EFI_MEMORY_RUNTIME);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  mPeriRegisterBase = 0xf7030000;
+  Status = gDS->AddMemorySpace (
+                  EfiGcdMemoryTypeMemoryMappedIo,
+                  mPeriRegisterBase, SIZE_4KB,
+                  EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
+                  );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = gDS->SetMemorySpaceAttributes (mPeriRegisterBase, SIZE_4KB, EFI_MEMORY_UC | EFI_MEMORY_RUNTIME);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
 #if defined(EARLY_DUMP) || defined(EARLY_CMD8_DUMP)
-  Buffer = UncachedAllocatePages (2);
+  Buffer = UncachedAllocateRuntimePages (2);
   if (Buffer == NULL)
     return EFI_BUFFER_TOO_SMALL;
 #endif
@@ -658,6 +802,12 @@ DwMmcDxeInitialize (
   DwMmcSendCommand (NULL, 8, 1 << 16);
   DwMmcReadBlockData (NULL, 0, 512, Buffer);
 #endif
+#ifndef ALLOC_DESC_PAGE
+  mIdmacDesc = (DWMMC_IDMAC_DESCRIPTOR *)UncachedAllocateRuntimePages (DWMMC_MAX_DESC_PAGES);
+  if (mIdmacDesc == NULL)
+    return EFI_BUFFER_TOO_SMALL;
+  mVirtIdmacDesc = mIdmacDesc;
+#endif
   DEBUG ((EFI_D_BLKIO, "DwMmcDxeInitialize()\n"));
 
   //Publish Component Name, BlockIO protocol interfaces
@@ -665,6 +815,17 @@ DwMmcDxeInitialize (
                   &Handle,
                   &gEfiMmcHostProtocolGuid,         &gMciHost,
                   NULL
+                  );
+  ASSERT_EFI_ERROR (Status);
+
+  mDwMmcMapNvStorageVariableBase = 0x30000000;
+  Status = gBS->CreateEventEx (
+                  EVT_NOTIFY_SIGNAL,
+                  TPL_NOTIFY,
+                  DwMmcVirtualNotifyEvent,
+                  NULL,
+                  &gEfiEventVirtualAddressChangeGuid,
+                  &mDwMmcVirtualAddrChangeEvent
                   );
   ASSERT_EFI_ERROR (Status);
 
