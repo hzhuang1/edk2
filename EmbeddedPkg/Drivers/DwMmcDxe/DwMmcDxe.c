@@ -385,13 +385,13 @@ DwMmcSendCommand (
   if (EfiAtRuntime ())
     mRTCmd++;
   Buf = (CHAR8*)(mDwMmcMapNvStorageVariableBase + 0x5000);
-  if (EfiAtRuntime ()) {
+  if (EfiAtRuntime () && (MMC_GET_INDX(MmcCmd) != MMC_INDX(13))) {
     CIndex = AsciiSPrint (Buf + mIndex, 0x1000, "Cmd:[%d]%d Arg:0x%x\n", mRTCmd, MMC_GET_INDX(MmcCmd), Argument);
     mIndex += CIndex;
-    CIndex = AsciiSPrint (Buf + mIndex, 0x1000, "MMC_STATUS:0x%x, MMC_IDSTS:0x%x, RINTSTS:0x%x\n", MmioRead32 (DWMMC_STATUS), MmioRead32 (DWMMC_IDSTS), MmioRead32 (DWMMC_RINTSTS));
-    mIndex += CIndex;
-    CIndex = AsciiSPrint (Buf + mIndex, 0x1000, "CLKENA:0x%x, CTRL:0x%x, TMOUT:0x%x\n", MmioRead32 (DWMMC_CLKENA), MmioRead32 (DWMMC_CTRL), MmioRead32 (DWMMC_TMOUT));
-    mIndex += CIndex;
+    //CIndex = AsciiSPrint (Buf + mIndex, 0x1000, "MMC_STATUS:0x%x, MMC_IDSTS:0x%x, RINTSTS:0x%x\n", MmioRead32 (DWMMC_STATUS), MmioRead32 (DWMMC_IDSTS), MmioRead32 (DWMMC_RINTSTS));
+    //mIndex += CIndex;
+    //CIndex = AsciiSPrint (Buf + mIndex, 0x1000, "CLKENA:0x%x, CTRL:0x%x, TMOUT:0x%x\n", MmioRead32 (DWMMC_CLKENA), MmioRead32 (DWMMC_CTRL), MmioRead32 (DWMMC_TMOUT));
+    //mIndex += CIndex;
   } else {
     //DEBUG ((EFI_D_ERROR, "Cmd:%d CLKSTAT12:0x%x\n", mCmd++, MmioRead32 (mPeriRegisterBase + 0x278)));
     //DEBUG ((EFI_D_ERROR, "Cmd:0x%x, STATUS:0x%x\n", MMC_GET_INDX(MmcCmd), MmioRead32 (DWMMC_STATUS)));
