@@ -31,7 +31,6 @@
 
 #include "BlockVariableDxe.h"
 
-
 STATIC EFI_PHYSICAL_ADDRESS      mMapNvStorageVariableBase;
 STATIC EFI_EVENT                 mBlockVariableVirtualAddrChangeEvent;
 STATIC VOID                      *mDataPtr;
@@ -123,8 +122,7 @@ FvbRead (
   Instance = CR (This, BLOCK_VARIABLE_INSTANCE, FvbProtocol, BLOCK_VARIABLE_SIGNATURE);
   BlockIo = Instance->BlockIoProtocol;
   Bytes = (Offset + *NumBytes + Instance->Media.BlockSize - 1) / Instance->Media.BlockSize * Instance->Media.BlockSize;
-  WriteBackDataCacheRange (mDataPtr, Bytes);
-  InvalidateDataCacheRange (Buffer, *NumBytes);
+  WriteBackInvalidateDataCacheRange (mDataPtr, Bytes);
   Status = BlockIo->ReadBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
 		                Bytes, mDataPtr);
   if (EFI_ERROR (Status)) {
@@ -158,7 +156,8 @@ FvbWrite (
   Instance = CR (This, BLOCK_VARIABLE_INSTANCE, FvbProtocol, BLOCK_VARIABLE_SIGNATURE);
   BlockIo = Instance->BlockIoProtocol;
   Bytes = (Offset + *NumBytes + Instance->Media.BlockSize - 1) / Instance->Media.BlockSize * Instance->Media.BlockSize;
-  WriteBackDataCacheRange (mDataPtr, Bytes);
+  SetMem (mDataPtr, Bytes, 0);
+  WriteBackInvalidateDataCacheRange (mDataPtr, Bytes);
   Status = BlockIo->ReadBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
                                 Bytes, mDataPtr);
   if (EFI_ERROR (Status)) {
@@ -167,19 +166,8 @@ FvbWrite (
     }
     goto exit;
   }
-  InvalidateDataCacheRange (mDataPtr, Bytes);
   CopyMem (mDataPtr + Offset, Buffer, *NumBytes);
-  WriteBackDataCacheRange (mDataPtr, Bytes);
-  Status = BlockIo->WriteBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
-                                 Bytes, mDataPtr);
-  if (EFI_ERROR (Status)) {
-    if (!EfiAtRuntime ()) {
-      DEBUG ((EFI_D_ERROR, "FvbWrite StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
-              Instance->StartLba, Lba, Offset, Status));
-    }
-  }
-  // Sometimes the variable isn't flushed into block device if it's the last flush operation.
-  // So flush it again.
+  WriteBackInvalidateDataCacheRange (mDataPtr, Bytes);
   Status = BlockIo->WriteBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
                                  Bytes, mDataPtr);
   if (EFI_ERROR (Status)) {
@@ -404,11 +392,12 @@ BlockVariableDxeInitialize (
     return EFI_INVALID_PARAMETER;
   }
 
-  mDataPtr = AllocateRuntimeZeroPool (NvStorageSize);
+  mDataPtr = AllocateRuntimeZeroPool (NvStorageSize + Instance->Media.BlockSize);
   if (mDataPtr == NULL) {
     DEBUG ((EFI_D_ERROR, "%a: failed to allocate buffer.\n", __func__));
     return EFI_BUFFER_TOO_SMALL;
   }
+  mDataPtr = ALIGN_POINTER (mDataPtr, Instance->Media.BlockSize);
 
   NvBlockDevicePath = &Instance->DevicePath;
   NvBlockDevicePath = ConvertTextToDevicePath ((CHAR16*)FixedPcdGetPtr (PcdNvStorageVariableBlockDevicePath));
