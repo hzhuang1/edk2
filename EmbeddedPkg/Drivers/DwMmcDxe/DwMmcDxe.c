@@ -484,6 +484,10 @@ PrepareDmaData (
    		                (LastIdx * DWMMC_DMA_BUF_SIZE));
   /* Set the Next field of Last Descriptor */
   (mVirtIdmacDesc + LastIdx)->Des3 = 0;
+  if (EfiAtRuntime ()) {
+    WriteBackInvalidateDataCacheRange (mVirtIdmacDesc, DWMMC_MAX_DESC_PAGES * EFI_PAGE_SIZE);
+  }
+
   MmioWrite32 (DWMMC_DBADDR, (UINT32)((UINTN)IdmacDesc));
 
   Data = MmioRead32 (DWMMC_CTRL);
