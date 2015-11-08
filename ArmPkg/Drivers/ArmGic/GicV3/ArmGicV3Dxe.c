@@ -285,8 +285,8 @@ GicV3DxeInitialize (
   // Set binary point reg to 0x7 (no preemption)
   ArmGicV3SetBinaryPointer (0x7);
 
-  // Set priority mask reg to 0xff to allow all priorities through
-  ArmGicV3SetPriorityMask (0xff);
+  // Clear priority mask reg to disable all priorities
+  ArmGicV3SetPriorityMask (0);
 
   // Enable gic cpu interface
   ArmGicV3EnableInterruptInterface ();
