@@ -135,8 +135,10 @@ CoreRestoreTpl (
   // If lowering below HIGH_LEVEL, make sure
   // interrupts are enabled
   //
+#if 0
   if (gEfiCurrentTpl < TPL_HIGH_LEVEL) {
     CoreSetInterruptState (TRUE);
   }
+#endif
 
 }
