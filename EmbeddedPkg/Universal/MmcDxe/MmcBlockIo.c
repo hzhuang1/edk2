@@ -343,7 +343,6 @@ MmcIoBlocks (
         DEBUG ((EFI_D_ERROR, "%a(MMC_CMD12): Error and Status = %r\n", Status));
         return Status;
       }
-      NanoSecondDelay (100);
       BytesRemainingToBeTransfered -= BlockCount * This->Media->BlockSize;
     } else { // IsDmaSupported
       BlockCount = 1;
