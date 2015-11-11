@@ -132,38 +132,6 @@ exit:
   return Status;
 }
 
-STATIC
-VOID
-EFIAPI
-HiKeyInitBootDevice (
-  IN VOID
-  )
-{
-  EFI_STATUS            Status;
-  UINTN                 VariableSize;
-  CHAR16                DefaultBootDevice[] = L"emmc";
-
-  VariableSize = BOOT_DEVICE_LENGTH * sizeof (CHAR16);
-  Status = gRT->GetVariable (
-                  (CHAR16 *)L"HiKeyBootDevice",
-                  &gArmGlobalVariableGuid,
-                  NULL,
-                  &VariableSize,
-                  &DefaultBootDevice
-                  );
-  if (Status == EFI_NOT_FOUND) {
-    Status = gRT->SetVariable (
-                    (CHAR16*)L"HiKeyBootDevice",
-                    &gArmGlobalVariableGuid,
-                    EFI_VARIABLE_NON_VOLATILE       |
-                    EFI_VARIABLE_BOOTSERVICE_ACCESS |
-                    EFI_VARIABLE_RUNTIME_ACCESS,
-                    VariableSize,
-                    DefaultBootDevice
-                    );
-  }
-}
-
 EFI_STATUS
 EFIAPI
 HiKeyEntryPoint (
@@ -174,7 +142,6 @@ HiKeyEntryPoint (
   EFI_STATUS           Status;
 
   HiKeyInitSerialNo ();
-  HiKeyInitBootDevice ();
   HiKeyInitPeripherals ();
 
   // Try to install the Flat Device Tree (FDT). This function actually installs the

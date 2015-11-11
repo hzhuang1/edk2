@@ -630,7 +630,6 @@ HiKeyFastbootPlatformOemCommand (
   )
 {
   CHAR16     CommandUnicode[65];
-  CHAR16     BootDevice[BOOT_DEVICE_LENGTH];
   UINTN      Index = 0, VariableSize;
   UINT16     AutoBoot, Data;
   EFI_STATUS Status;
@@ -671,49 +670,6 @@ HiKeyFastbootPlatformOemCommand (
                     sizeof (UINT16),
                     &AutoBoot
                     );
-    return Status;
-  } else if (AsciiStrnCmp (Command, "bootdevice", AsciiStrLen ("bootdevice")) == 0) {
-    Index += sizeof ("bootdevice");
-    while (TRUE) {
-      if (Command[Index] == '\0')
-        goto out;
-      else if (Command[Index] == ' ')
-        Index++;
-      else
-        break;
-    }
-    AsciiStrToUnicodeStr (Command + Index, CommandUnicode);
-    for (Index = 0; Index < BOOT_DEVICE_LENGTH; Index++) {
-      if (IS_ALPHA (CommandUnicode[Index]) == 0)
-        break;
-    }
-    if ((Index == 0) || (Index > BOOT_DEVICE_LENGTH)) {
-      DEBUG ((EFI_D_ERROR,
-        "HiKey: Invalid Fastboot OEM bootdevice command: %s\n",
-        CommandUnicode
-        ));
-      return EFI_NOT_FOUND;
-    }
-
-    VariableSize = BOOT_DEVICE_LENGTH * sizeof (UINT16);
-    Status = gRT->GetVariable (
-                    (CHAR16 *)L"HiKeyBootDevice",
-                    &gArmGlobalVariableGuid,
-                    NULL,
-                    &VariableSize,
-                    &BootDevice
-                    );
-    if (EFI_ERROR (Status) == 0) {
-      Status = gRT->SetVariable (
-                      (CHAR16*)L"HiKeyBootDevice",
-                      &gArmGlobalVariableGuid,
-                      EFI_VARIABLE_NON_VOLATILE       |
-                      EFI_VARIABLE_BOOTSERVICE_ACCESS |
-                      EFI_VARIABLE_RUNTIME_ACCESS,
-                      VariableSize,
-                      CommandUnicode
-                      );
-    }
     return Status;
   } else {
     AsciiStrToUnicodeStr (Command + Index, CommandUnicode);
