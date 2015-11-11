@@ -57,8 +57,7 @@ STATIC UINT16 mBootIndex = 0;
 
 #define HIKEY_BOOT_ENTRY_FASTBOOT          0
 #define HIKEY_BOOT_ENTRY_GRUB_EMMC         1    /* boot eMMC with grub */
-#define HIKEY_BOOT_ENTRY_GRUB_SD           2    /* boot SD with grub */
-#define HIKEY_BOOT_ENTRY_BOOT_SD           3    /* boot SD without grub */
+#define HIKEY_BOOT_ENTRY_BOOT_SD           2    /* boot SD without grub */
 
 STATIC struct HiKeyBootEntry Entries[] = {
   [HIKEY_BOOT_ENTRY_FASTBOOT] = {
@@ -71,12 +70,6 @@ STATIC struct HiKeyBootEntry Entries[] = {
     L"VenHw(B549F005-4BD4-4020-A0CB-06F42BDA68C3)/HD(6,GPT,5C0F213C-17E1-4149-88C8-8B50FB4EC70E,0x7000,0x20000)/grubaa64.efi",
     NULL,
     L"grub on eMMC",
-    LOAD_OPTION_CATEGORY_APP
-  },
-  [HIKEY_BOOT_ENTRY_GRUB_SD] = {
-    L"VenHw(594BFE73-5E18-4F12-8119-19DB8C5FC849)/HD(1,MBR,0x00000000,0x3F,0x21FC0)/grubaa64.efi",
-    NULL,
-    L"grub on SD",
     LOAD_OPTION_CATEGORY_APP
   },
   [HIKEY_BOOT_ENTRY_BOOT_SD] = {
@@ -562,7 +555,6 @@ HiKeyOnEndOfDxe (
   case HIKEY_BOOT_ENTRY_GRUB_EMMC:
     HiKeyCreateFdtVariable (L"VenHw(B549F005-4BD4-4020-A0CB-06F42BDA68C3)/HD(6,GPT,5C0F213C-17E1-4149-88C8-8B50FB4EC70E,0x7000,0x20000)/hi6220-hikey.dtb");
     break;
-  case HIKEY_BOOT_ENTRY_GRUB_SD:
   case HIKEY_BOOT_ENTRY_BOOT_SD:
     HiKeyCreateFdtVariable (L"VenHw(594BFE73-5E18-4F12-8119-19DB8C5FC849)/HD(1,MBR,0x00000000,0x3F,0x21FC0)/hi6220-hikey.dtb");
     break;
