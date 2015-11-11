@@ -16,6 +16,7 @@
 #include <Library/BaseMemoryLib.h>
 #include <Library/BdsLib.h>
 #include <Library/DevicePathLib.h>
+#include <Library/IoLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PrintLib.h>
 #include <Library/UefiBootServicesTableLib.h>
@@ -416,6 +417,31 @@ HiKeyDetectJumper (
 }
 
 STATIC
+BOOLEAN
+EFIAPI
+HiKeySDCardIsPresent (
+  IN      VOID
+  )
+{
+  UINT32    Value;
+
+  /*
+   * FIXME
+   * At first, reading GPIO pin shouldn't exist in SD driver. We need to
+   * add some callbacks to handle settings for hardware platform.
+   * In the second, reading GPIO pin should be based on GPIO driver. Now
+   * GPIO driver could only be used for one PL061 gpio controller. And it's
+   * used to detect jumper setting. As a workaround, we have to read the gpio
+   * register instead at here.
+   *
+   */
+  Value = MmioRead32 (0xf8012000 + (1 << 2));
+  if (Value)
+    return FALSE;
+  return TRUE;
+}
+
+STATIC
 VOID
 EFIAPI
 HiKeyCreateFdtVariable (
@@ -459,7 +485,6 @@ HiKeyOnEndOfDxe (
   EFI_STATUS          Status;
   UINTN               VariableSize;
   UINT16              AutoBoot, Count, Index;
-  CHAR16              BootDevice[BOOT_DEVICE_LENGTH];
 
   VariableSize = sizeof (UINT16);
   Status = gRT->GetVariable (
@@ -523,23 +548,9 @@ HiKeyOnEndOfDxe (
   HiKeyDetectJumper ();
 
   if (mBootIndex > 0) {
-    VariableSize = BOOT_DEVICE_LENGTH * sizeof (UINT16);
-    Status = gRT->GetVariable (
-                    (CHAR16 *)L"HiKeyBootDevice",
-                    &gArmGlobalVariableGuid,
-                    NULL,
-                    &VariableSize,
-                    &BootDevice
-                    );
-     if (EFI_ERROR (Status) == 0) {
-       if (StrnCmp (BootDevice, L"emmc", StrLen (L"emmc")) == 0) {
-         mBootIndex = HIKEY_BOOT_ENTRY_GRUB_EMMC;
-       } else if (StrnCmp (BootDevice, L"sd", StrLen (L"sd")) == 0) {
-         mBootIndex = HIKEY_BOOT_ENTRY_GRUB_SD;
-       } else {
-         DEBUG ((EFI_D_ERROR, "%a: invalid boot device (%a) is specified\n", __func__, BootDevice));
-         mBootIndex = HIKEY_BOOT_ENTRY_GRUB_EMMC;
-       }
+     // If SD card is present, boot from SD card directly.
+     if (HiKeySDCardIsPresent () == TRUE) {
+       mBootIndex = HIKEY_BOOT_ENTRY_BOOT_SD;
      } else {
        mBootIndex = HIKEY_BOOT_ENTRY_GRUB_EMMC;
      }
