@@ -74,7 +74,7 @@ STATIC struct HiKeyBootEntry Entries[] = {
   },
   [HIKEY_BOOT_ENTRY_BOOT_SD] = {
     L"VenHw(594BFE73-5E18-4F12-8119-19DB8C5FC849)/HD(1,MBR,0x00000000,0x3F,0x21FC0)/Image",
-    L"console=ttyAMA3,115200 earlycon=pl011,0xf7113000 root=/dev/mmcblk1p2 rw rootwait initrd=initrd.img-3.18.0-linaro-hikey efi=noruntime",
+    L"console=ttyAMA3,115200 earlycon=pl011,0xf7113000 root=/dev/mmcblk1p2 rw rootwait initrd=initrd.img efi=noruntime",
     L"boot from SD without grub",
     LOAD_OPTION_CATEGORY_BOOT
   }
