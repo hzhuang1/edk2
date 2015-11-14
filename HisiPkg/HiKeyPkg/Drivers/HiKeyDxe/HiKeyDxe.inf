@@ -23,7 +23,6 @@
 [Sources.common]
   HiKeyDxe.c
   InitPeripherals.c
-  InstallFdt.c
   InstallBootMenu.c
 
 [Packages]
@@ -39,7 +38,6 @@
   CacheMaintenanceLib
   DebugLib
   DxeServicesTableLib
-  FdtLib
   IoLib
   PcdLib
   PrintLib
@@ -54,7 +52,6 @@
   gEfiEndOfDxeEventGroupGuid
   gEfiFileInfoGuid
   gEfiGlobalVariableGuid
-  gFdtTableGuid
   gArmPlatformUpdateFdtEventGuid
 
 [Protocols]
