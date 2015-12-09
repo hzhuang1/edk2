@@ -12,6 +12,7 @@
 *
 **/
 
+#include <Protocol/DevicePathToText.h>
 #include "BdsInternal.h"
 
 //#include <Library/DxeServicesLib.h>
@@ -114,6 +115,8 @@ BdsLoadApplication (
   UINTN                           NoHandles, HandleIndex;
   EFI_HANDLE                      *Handles;
   EFI_DEVICE_PATH                 *EfiAppDevicePath;
+  EFI_DEVICE_PATH_TO_TEXT_PROTOCOL   *DevicePathToTextProtocol;
+  CHAR16                             *DevicePathText;
 
   // Need to connect every drivers to ensure no dependencies are missing for the application
   Status = BdsConnectAllDrivers();
@@ -134,6 +137,11 @@ BdsLoadApplication (
     EfiAppDevicePath = NULL;
     Status = BdsLoadFileFromFirmwareVolume (Handles[HandleIndex], EfiApp, EFI_FV_FILETYPE_APPLICATION, &EfiAppDevicePath);
     if (!EFI_ERROR (Status)) {
+      Status = gBS->LocateProtocol (&gEfiDevicePathToTextProtocolGuid, NULL, (VOID **)&DevicePathToTextProtocol);
+      ASSERT_EFI_ERROR(Status);
+      DevicePathText = DevicePathToTextProtocol->ConvertDevicePathToText(EfiAppDevicePath, TRUE, TRUE);
+      DEBUG ((EFI_D_ERROR, "#%a, Text:%a\n", __func__, DevicePathText));
+      DEBUG ((EFI_D_ERROR, "#%a, Text:%s\n", __func__, DevicePathText));
       // Start the application
       Status = BdsStartEfiApplication (ParentImageHandle, EfiAppDevicePath, LoadOptionsSize, LoadOptions);
       return Status;

@@ -1012,10 +1012,28 @@ BootShell (
   return Status;
 }
 
+EFI_STATUS
+Fastboot (
+  IN LIST_ENTRY *BootOptionsList
+  )
+{
+  EFI_STATUS Status;
+
+  Status = BdsLoadApplication (gImageHandle, L"AndroidFastbootApp", 0, NULL);
+  if (Status == EFI_NOT_FOUND) {
+    Print (L"Error: EFI Application not found.\n");
+  } else if (EFI_ERROR(Status)) {
+    Print (L"Error: Status Code: 0x%X\n",(UINT32)Status);
+  }
+
+  return Status;
+}
+
 struct BOOT_MAIN_ENTRY {
   CONST CHAR16* Description;
   EFI_STATUS (*Callback) (IN LIST_ENTRY *BootOptionsList);
 } BootMainEntries[] = {
+    { L"AndroidFastbootApp", Fastboot },
     { L"Shell", BootShell },
     { L"Boot Manager", BootMenuManager },
 };
