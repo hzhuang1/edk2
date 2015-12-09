@@ -151,6 +151,8 @@ READ_LOCK_STATUS   = TRUE
 
   INF MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
 
+  INF AndroidFastbootBinPkg/AndroidFastboot.inf
+
   #
   # UEFI applications
   #
