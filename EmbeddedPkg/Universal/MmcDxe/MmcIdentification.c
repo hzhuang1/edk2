@@ -259,7 +259,7 @@ InitializeEmmcDevice (
   )
 {
   EFI_MMC_HOST_PROTOCOL *Host;
-  EFI_STATUS Status;
+  EFI_STATUS Status = EFI_SUCCESS;
   ECSD       *ECSDData;
   BOOLEAN    Found = FALSE;
   UINT32     BusClockFreq, Idx;
@@ -712,8 +712,9 @@ InitializeMmcDevice (
   }
 
   if (MmcHostInstance->CardInfo.CardType == EMMC_CARD) {
-    if (MmcHost->SetIos)
+    if (MmcHost->SetIos) {
       Status = InitializeEmmcDevice (MmcHostInstance);
+    }
   } else {
     Status = InitializeSdMmcDevice (MmcHostInstance);
   }
