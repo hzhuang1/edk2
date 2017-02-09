@@ -222,7 +222,20 @@ LocateEfiApplicationInFvByGuid (
         //
         // Create the EFI Device Path for the application using the Filename of the application
         //
+#if 0
         *DevicePath = FileDevicePath (HandleBuffer[Index], UiSection);
+#else
+        Status = gBS->HandleProtocol (HandleBuffer[Index], &gEfiDevicePathProtocolGuid, (VOID**)&FvDevicePath);
+        ASSERT_EFI_ERROR (Status);
+        //
+        // Create the EFI Device Path for the application using the EFI GUID of the application
+        //
+        EfiInitializeFwVolDevicepathNode (&FvFileDevicePath, EfiAppGuid);
+
+        *DevicePath = AppendDevicePathNode (FvDevicePath, (EFI_DEVICE_PATH_PROTOCOL *)&FvFileDevicePath);
+        ASSERT (*DevicePath != NULL);
+#endif
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
       } else {
         Status = gBS->HandleProtocol (HandleBuffer[Index], &gEfiDevicePathProtocolGuid, (VOID**)&FvDevicePath);
         ASSERT_EFI_ERROR (Status);
@@ -234,6 +247,7 @@ LocateEfiApplicationInFvByGuid (
 
         *DevicePath = AppendDevicePathNode (FvDevicePath, (EFI_DEVICE_PATH_PROTOCOL *)&FvFileDevicePath);
         ASSERT (*DevicePath != NULL);
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
       }
       break;
     }

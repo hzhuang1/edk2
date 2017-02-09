@@ -14,6 +14,7 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 **/
 
 #include "InternalBm.h"
+#include <Protocol/DevicePathToText.h>
 
 EFI_RAM_DISK_PROTOCOL                        *mRamDisk                  = NULL;
 
@@ -120,6 +121,7 @@ BmFindBootOptionInVariable (
     BootOptions = EfiBootManagerGetLoadOptions (&BootOptionCount, LoadOptionTypeBoot);
 
     Index = EfiBootManagerFindLoadOption (OptionToFind, BootOptions, BootOptionCount);
+DEBUG ((DEBUG_ERROR, "#%a, %d, Index:%d\n", __func__, __LINE__, Index));
     if (Index != -1) {
       OptionNumber = BootOptions[Index].OptionNumber;
     }
@@ -692,6 +694,7 @@ BmExpandUriDevicePath (
   EFI_HANDLE                      *Handles;
   VOID                            *FileBuffer;
 
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
   EfiBootManagerConnectAll ();
   Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiLoadFileProtocolGuid, NULL, &HandleCount, &Handles);
   if (EFI_ERROR (Status)) {
@@ -973,6 +976,8 @@ BmExpandMediaDevicePath (
   VOID                                *FileBuffer;
   UINT32                              AuthenticationStatus;
 
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
+
   //
   // Check whether the device is connected
   //
@@ -1009,6 +1014,7 @@ BmExpandMediaDevicePath (
   Status = gBS->HandleProtocol (Handle, &gEfiBlockIoProtocolGuid, (VOID **) &BlockIo);
   ASSERT_EFI_ERROR (Status);
   Buffer = AllocatePool (BlockIo->Media->BlockSize);
+DEBUG ((DEBUG_ERROR, "#%a, %d, BlockSize:%d\n", __func__, __LINE__, BlockIo->Media->BlockSize));
   if (Buffer != NULL) {
     BlockIo->ReadBlocks (
       BlockIo,
@@ -1033,7 +1039,9 @@ BmExpandMediaDevicePath (
          &NumberSimpleFileSystemHandles,
          &SimpleFileSystemHandles
          );
+DEBUG ((DEBUG_ERROR, "#%a, %d, NumberSimpleFileSystemHandles:%d\n", __func__, __LINE__, NumberSimpleFileSystemHandles));
   for (Index = 0; Index < NumberSimpleFileSystemHandles; Index++) {
+DEBUG ((DEBUG_ERROR, "#%a, %d, Index:%d\n", __func__, __LINE__, Index));
     //
     // Get the device path size of SimpleFileSystem handle
     //
@@ -1043,9 +1051,26 @@ BmExpandMediaDevicePath (
     // Check whether the device path of boot option is part of the SimpleFileSystem handle's device path
     //
     if ((Size <= TempSize) && (CompareMem (TempDevicePath, DevicePath, Size) == 0)) {
+DEBUG ((DEBUG_ERROR, "#%a, %d, Index:%d\n", __func__, __LINE__, Index));
       TempDevicePath = FileDevicePath (SimpleFileSystemHandles[Index], EFI_REMOVABLE_MEDIA_FILE_NAME);
+  {
+    // We convert back to the text representation of the device Path
+    EFI_DEVICE_PATH_TO_TEXT_PROTOCOL  *DevicePathToTextProtocol;
+    CHAR16                            *DevicePathTxt;
+
+    DevicePathToTextProtocol = NULL;
+    gBS->LocateProtocol(&gEfiDevicePathToTextProtocolGuid, NULL, (VOID **) &DevicePathToTextProtocol);
+    if (DevicePathToTextProtocol != NULL) {
+      DevicePathTxt = DevicePathToTextProtocol->ConvertDevicePathToText (TempDevicePath, TRUE, TRUE);
+
+      DEBUG((EFI_D_ERROR,"#%a, %d, Device Path '%s'.\n", __func__, __LINE__, DevicePathTxt));
+
+      FreePool (DevicePathTxt);
+    }
+  }
       FileBuffer = GetFileBufferByFilePath (TRUE, TempDevicePath, FileSize, &AuthenticationStatus);
       if (FileBuffer != NULL) {
+DEBUG ((DEBUG_ERROR, "#%a, %d, Index:%d\n", __func__, __LINE__, Index));
         *FullPath = TempDevicePath;
         break;
       }
@@ -1117,6 +1142,7 @@ BmGetFileBufferFromLoadFileSystem (
   UINTN                           Index;
   EFI_DEVICE_PATH_PROTOCOL        *Node;
 
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
   Status = gBS->LocateHandleBuffer (
                   ByProtocol,
                   &gEfiBlockIoProtocolGuid,
@@ -1366,6 +1392,7 @@ BmGetFileBufferFromLoadFiles (
   UINTN                           Index;
   EFI_DEVICE_PATH_PROTOCOL        *Node;
 
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
   //
   // Get file buffer from load file instance.
   //
@@ -1440,6 +1467,7 @@ EfiBootManagerGetLoadOptionBuffer (
 
   ASSERT ((FilePath != NULL) && (FullPath != NULL) && (FileSize != NULL));
 
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
   EfiBootManagerConnectDevicePath (FilePath, NULL);
 
   *FullPath  = NULL;
@@ -1688,6 +1716,24 @@ EfiBootManagerBoot (
     FileBuffer = EfiBootManagerGetLoadOptionBuffer (BootOption->FilePath, &FilePath, &FileSize);
     if (FileBuffer != NULL) {
       RamDiskDevicePath = BmGetRamDiskDevicePath (FilePath);
+#if 0
+  {
+    // We convert back to the text representation of the device Path
+    EFI_DEVICE_PATH_TO_TEXT_PROTOCOL  *DevicePathToTextProtocol;
+    CHAR16                            *DevicePathTxt;
+
+    DevicePathToTextProtocol = NULL;
+    gBS->LocateProtocol(&gEfiDevicePathToTextProtocolGuid, NULL, (VOID **) &DevicePathToTextProtocol);
+    if (DevicePathToTextProtocol != NULL) {
+      DevicePathTxt = DevicePathToTextProtocol->ConvertDevicePathToText (RamDiskDevicePath, TRUE, TRUE);
+
+      DEBUG((EFI_D_ERROR,"#%a, %d, Device Path '%s'.\n", __func__, __LINE__, DevicePathTxt));
+
+      FreePool (DevicePathTxt);
+    }
+  }
+#endif
+
     }
     DEBUG_CODE (
       if (FileBuffer != NULL && CompareMem (BootOption->FilePath, FilePath, GetDevicePathSize (FilePath)) != 0) {
@@ -1708,7 +1754,18 @@ EfiBootManagerBoot (
                       FileSize,
                       &ImageHandle
                       );
+/*
+if (StrCmp (BootOption->Description, L"Android Fastboot") == 0) {
+  DEBUG ((DEBUG_ERROR, "#%a, %d, Status:%r\n", __func__, __LINE__, Status));
+  ASSERT (0);
+}
+*/
     }
+/*
+if (StrCmp (BootOption->Description, L"Android Fastboot") == 0) {
+  ASSERT (0);
+}
+*/
     if (FileBuffer != NULL) {
       FreePool (FileBuffer);
     }
@@ -1735,6 +1792,11 @@ EfiBootManagerBoot (
       return;
     }
   }
+/*
+if (StrCmp (BootOption->Description, L"Android Fastboot") == 0) {
+  ASSERT (0);
+}
+*/
 
   //
   // Check to see if we should legacy BOOT. If yes then do the legacy boot
@@ -1945,6 +2007,7 @@ BmEnumerateBootOptions (
 
   *BootOptionCount = 0;
   BootOptions      = NULL;
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
 
   //
   // Parse removable block io followed by fixed block io
@@ -1990,6 +2053,7 @@ BmEnumerateBootOptions (
                       );
       ASSERT (BootOptions != NULL);
 
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
       Status = EfiBootManagerInitializeLoadOption (
                  &BootOptions[(*BootOptionCount)++],
                  LoadOptionNumberUnassigned,
@@ -2040,6 +2104,7 @@ BmEnumerateBootOptions (
                     );
     ASSERT (BootOptions != NULL);
 
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
     Status = EfiBootManagerInitializeLoadOption (
                &BootOptions[(*BootOptionCount)++],
                LoadOptionNumberUnassigned,
@@ -2131,6 +2196,7 @@ EfiBootManagerRefreshAllBootOption (
 
   BootOptions   = BmEnumerateBootOptions (&BootOptionCount);
   NvBootOptions = EfiBootManagerGetLoadOptions (&NvBootOptionCount, LoadOptionTypeBoot);
+DEBUG ((DEBUG_ERROR, "#%a, %d, BootOptionCount:%d, NvBootOptionCount:%d\n", __func__, __LINE__, BootOptionCount, NvBootOptionCount));
 
   //
   // Mark the boot option as added by BDS by setting OptionalData to a special GUID
@@ -2153,6 +2219,7 @@ EfiBootManagerRefreshAllBootOption (
       // so that the boot options added by end-user or OS installer won't be deleted
       //
       if (EfiBootManagerFindLoadOption (&NvBootOptions[Index], BootOptions, BootOptionCount) == (UINTN) -1) {
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
         Status = EfiBootManagerDeleteLoadOptionVariable (NvBootOptions[Index].OptionNumber, LoadOptionTypeBoot);
         //
         // Deleting variable with current variable implementation shouldn't fail.

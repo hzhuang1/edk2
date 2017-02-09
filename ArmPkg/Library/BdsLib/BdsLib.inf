@@ -61,6 +61,7 @@
   gEfiDhcp4ProtocolGuid
   gEfiMtftp4ServiceBindingProtocolGuid
   gEfiMtftp4ProtocolGuid
+  gEfiDevicePathToTextProtocolGuid
 
 [FixedPcd]
   gArmTokenSpaceGuid.PcdMaxTftpFileSize

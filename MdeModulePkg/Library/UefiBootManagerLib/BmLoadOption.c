@@ -14,6 +14,7 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 **/
 
 #include "InternalBm.h"
+#include <Protocol/DevicePathToText.h>
 
 GLOBAL_REMOVE_IF_UNREFERENCED
   CHAR16 *mBmLoadOptionName[] = {
@@ -866,6 +867,7 @@ EfiBootManagerVariableToLoadOptionEx (
   if (!EfiBootManagerIsValidLoadOptionVariableName (VariableName, &OptionType, &OptionNumber)) {
     return EFI_INVALID_PARAMETER;
   }
+DEBUG ((DEBUG_ERROR, "#%a, %d, VariableName:%s\n", __func__, __LINE__, VariableName));
 
   //
   // Read the variable
@@ -910,6 +912,22 @@ EfiBootManagerVariableToLoadOptionEx (
   // Get the option's device path
   //
   FilePath = (EFI_DEVICE_PATH_PROTOCOL *) VariablePtr;
+  {
+    // We convert back to the text representation of the device Path
+    EFI_DEVICE_PATH_TO_TEXT_PROTOCOL  *DevicePathToTextProtocol;
+    CHAR16                            *DevicePathTxt;
+
+    DevicePathToTextProtocol = NULL;
+    gBS->LocateProtocol(&gEfiDevicePathToTextProtocolGuid, NULL, (VOID **) &DevicePathToTextProtocol);
+    if (DevicePathToTextProtocol != NULL) {
+      DevicePathTxt = DevicePathToTextProtocol->ConvertDevicePathToText (FilePath, TRUE, TRUE);
+
+      DEBUG((EFI_D_ERROR,"#%a, %d, Device Path '%s'.\n", __func__, __LINE__, DevicePathTxt));
+
+      FreePool (DevicePathTxt);
+    }
+
+  }
   VariablePtr += FilePathSize;
 
   OptionalDataSize = (UINT32) (VariableSize - (UINTN) (VariablePtr - Variable));
@@ -992,7 +1010,9 @@ BmCollectLoadOptions (
       EfiBootManagerIsValidLoadOptionVariableName (Name, &OptionType, &OptionNumber) &&
       OptionType == LoadOptionTypePlatformRecovery
      )) {
+DEBUG ((DEBUG_ERROR, "#%a, %d, Name:%s\n", __func__, __LINE__, Name));
     Status = EfiBootManagerVariableToLoadOptionEx (Name, Guid, &Option);
+DEBUG ((DEBUG_ERROR, "#%a, %d, Name:%s, Status:%r\n", __func__, __LINE__, Name, Status));
     if (!EFI_ERROR (Status)) {
       for (Index = 0; Index < Param->OptionCount; Index++) {
         if (Param->Options[Index].OptionNumber > Option.OptionNumber) {
@@ -1062,6 +1082,7 @@ EfiBootManagerGetLoadOptions (
     for (Index = 0; Index < *OptionCount; Index++) {
       OptionNumber = OptionOrder[Index];
       UnicodeSPrint (OptionName, sizeof (OptionName), L"%s%04x", mBmLoadOptionName[LoadOptionType], OptionNumber);
+DEBUG ((DEBUG_ERROR, "#%a, %d, Index:%d, OptionCount:%d, OptionName:%s\n", __func__, __LINE__, Index, *OptionCount, OptionName));
 
       Status = EfiBootManagerVariableToLoadOption (OptionName, &Options[OptionIndex]);
       if (EFI_ERROR (Status)) {
@@ -1084,6 +1105,7 @@ EfiBootManagerGetLoadOptions (
     }
 
   } else if (LoadOptionType == LoadOptionTypePlatformRecovery) {
+DEBUG ((DEBUG_ERROR, "#%a, %d, platform recovery\n", __func__, __LINE__));
     Param.OptionType = LoadOptionTypePlatformRecovery;
     Param.Options = NULL;
     Param.OptionCount = 0;

@@ -14,6 +14,7 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 **/
 
 #include "InternalBm.h"
+#include <Protocol/DevicePathToText.h>
 
 #define VENDOR_IDENTIFICATION_OFFSET     3
 #define VENDOR_IDENTIFICATION_LENGTH     8
@@ -517,6 +518,21 @@ BmGetMiscDescription (
   EFI_BLOCK_IO_PROTOCOL           *BlockIo;
   EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs;
 
+  {
+    // We convert back to the text representation of the device Path
+    EFI_DEVICE_PATH_TO_TEXT_PROTOCOL  *DevicePathToTextProtocol;
+    CHAR16                            *DevicePathTxt;
+
+    DevicePathToTextProtocol = NULL;
+    gBS->LocateProtocol(&gEfiDevicePathToTextProtocolGuid, NULL, (VOID **) &DevicePathToTextProtocol);
+    if (DevicePathToTextProtocol != NULL) {
+      DevicePathTxt = DevicePathToTextProtocol->ConvertDevicePathToText (DevicePathFromHandle (Handle), TRUE, TRUE);
+
+      DEBUG((EFI_D_ERROR,"#%a, %d, Device Path '%s'.\n", __func__, __LINE__, DevicePathTxt));
+
+      FreePool (DevicePathTxt);
+    }
+  }
   switch (BmDevicePathType (DevicePathFromHandle (Handle))) {
   case BmAcpiFloppyBoot:
     Description = L"Floppy";
@@ -546,6 +562,7 @@ BmGetMiscDescription (
       Description = BlockIo->Media->RemovableMedia ? L"Removable Disk" : L"Hard Drive";
     } else {
       Description = L"Misc Device";
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
     }
     break;
 
@@ -555,6 +572,7 @@ BmGetMiscDescription (
       Description = L"Non-Block Boot Device";
     } else {
       Description = L"Misc Device";
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
     }
     break;
   }
@@ -580,6 +598,7 @@ EfiBootManagerRegisterBootDescriptionHandler (
   LIST_ENTRY                                    *Link;
   BM_BOOT_DESCRIPTION_ENTRY                    *Entry;
 
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
   for ( Link = GetFirstNode (&mPlatformBootDescriptionHandlers)
       ; !IsNull (&mPlatformBootDescriptionHandlers, Link)
       ; Link = GetNextNode (&mPlatformBootDescriptionHandlers, Link)

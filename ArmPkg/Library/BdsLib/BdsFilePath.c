@@ -24,6 +24,8 @@
 #include <Protocol/Dhcp4.h>
 #include <Protocol/Mtftp4.h>
 
+#include <Protocol/DevicePathToText.h>
+
 
 #define IS_DEVICE_PATH_NODE(node,type,subtype) (((node)->Type == (type)) && ((node)->SubType == (subtype)))
 
@@ -1380,14 +1382,32 @@ BdsStartEfiApplication (
   UINTN                        BinarySize;
   EFI_LOADED_IMAGE_PROTOCOL*   LoadedImage;
 
+  {
+    // We convert back to the text representation of the device Path
+    EFI_DEVICE_PATH_TO_TEXT_PROTOCOL  *DevicePathToTextProtocol;
+    CHAR16                            *DevicePathTxt;
+
+    DevicePathToTextProtocol = NULL;
+    gBS->LocateProtocol(&gEfiDevicePathToTextProtocolGuid, NULL, (VOID **) &DevicePathToTextProtocol);
+    if (DevicePathToTextProtocol != NULL) {
+      DevicePathTxt = DevicePathToTextProtocol->ConvertDevicePathToText (DevicePath, TRUE, TRUE);
+
+      DEBUG((EFI_D_ERROR,"#%a, %d, Device Path '%s'.\n", __func__, __LINE__, DevicePathTxt));
+
+      FreePool (DevicePathTxt);
+    }
+  }
+
   // Find the nearest supported file loader
   Status = BdsLoadImageAndUpdateDevicePath (&DevicePath, AllocateAnyPages, &BinaryBuffer, &BinarySize);
+DEBUG ((DEBUG_ERROR, "#%a, %d, Status:%r\n", __func__, __LINE__, Status));
   if (EFI_ERROR (Status)) {
     return Status;
   }
 
   // Load the image from the Buffer with Boot Services function
   Status = gBS->LoadImage (TRUE, ParentImageHandle, DevicePath, (VOID*)(UINTN)BinaryBuffer, BinarySize, &ImageHandle);
+DEBUG ((DEBUG_ERROR, "#%a, %d, Status:%r\n", __func__, __LINE__, Status));
   if (EFI_ERROR (Status)) {
     return Status;
   }
@@ -1395,6 +1415,7 @@ BdsStartEfiApplication (
   // Passed LoadOptions to the EFI Application
   if (LoadOptionsSize != 0) {
     Status = gBS->HandleProtocol (ImageHandle, &gEfiLoadedImageProtocolGuid, (VOID **) &LoadedImage);
+DEBUG ((DEBUG_ERROR, "#%a, %d, Status:%r\n", __func__, __LINE__, Status));
     if (EFI_ERROR (Status)) {
       return Status;
     }
@@ -1403,10 +1424,13 @@ BdsStartEfiApplication (
     LoadedImage->LoadOptions      = LoadOptions;
   }
 
+DEBUG ((DEBUG_ERROR, "#%a, %d, Status:%r\n", __func__, __LINE__, Status));
   // Before calling the image, enable the Watchdog Timer for  the 5 Minute period
   gBS->SetWatchdogTimer (5 * 60, 0x0000, 0x00, NULL);
+DEBUG ((DEBUG_ERROR, "#%a, %d, Status:%r\n", __func__, __LINE__, Status));
   // Start the image
   Status = gBS->StartImage (ImageHandle, NULL, NULL);
+DEBUG ((DEBUG_ERROR, "#%a, %d, Status:%r\n", __func__, __LINE__, Status));
   // Clear the Watchdog Timer after the image returns
   gBS->SetWatchdogTimer (0x0000, 0x0000, 0x0000, NULL);
 

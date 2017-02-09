@@ -45,29 +45,35 @@ _ModuleEntryPoint (
 {
   EFI_STATUS                 Status;
 
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
   if (_gUefiDriverRevision != 0) {
     //
     // Make sure that the EFI/UEFI spec revision of the platform is >= EFI/UEFI spec revision of the application.
     //
     if (SystemTable->Hdr.Revision < _gUefiDriverRevision) {
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
       return EFI_INCOMPATIBLE_VERSION;
     }
   }
 
+DEBUG ((DEBUG_ERROR, "#%a, %d, ProcessLibraryConstructorList:0x%x\n", __func__, __LINE__, (UINT32)(UINTN)ProcessLibraryConstructorList));
   //
   // Call constructor for all libraries.
   //
   ProcessLibraryConstructorList (ImageHandle, SystemTable);
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
 
   //
   // Call the module's entry point
   //
   Status = ProcessModuleEntryPointList (ImageHandle, SystemTable);
+DEBUG ((DEBUG_ERROR, "#%a, %d, Status:%r\n", __func__, __LINE__, Status));
 
   //
   // Process destructor for all libraries.
   //
   ProcessLibraryDestructorList (ImageHandle, SystemTable);
+DEBUG ((DEBUG_ERROR, "#%a, %d\n", __func__, __LINE__));
 
   //
   // Return the return status code from the driver entry point
