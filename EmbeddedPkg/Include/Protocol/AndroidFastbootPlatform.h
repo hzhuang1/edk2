@@ -133,6 +133,28 @@ EFI_STATUS
   IN  CHAR8   *Command
   );
 
+/*
+  Flash the partition named (according to a platform-specific scheme)
+  PartitionName, with partition offset and the image pointed to by Buffer,
+  whose size is BufferSize.
+
+  @param[in] PartitionName  Null-terminated name of partition to write.
+  @param[in] Offset         Offset of partition.
+  @param[in] BufferSize     Size of Buffer in byets.
+  @param[in] Buffer         Data to write to partition.
+
+  @retval EFI_NOT_FOUND     No such partition.
+  @retval EFI_DEVICE_ERROR  Flashing failed.
+*/
+typedef
+EFI_STATUS
+(*FASTBOOT_PLATFORM_FLASH_EX) (
+  IN CHAR8   *PartitionName,
+  IN UINTN    Offset,
+  IN UINTN    BufferSize,
+  IN VOID    *Buffer
+  );
+
 typedef struct _FASTBOOT_PLATFORM_PROTOCOL {
   FASTBOOT_PLATFORM_INIT          Init;
   FASTBOOT_PLATFORM_UN_INIT       UnInit;
@@ -140,6 +162,7 @@ typedef struct _FASTBOOT_PLATFORM_PROTOCOL {
   FASTBOOT_PLATFORM_ERASE         ErasePartition;
   FASTBOOT_PLATFORM_GETVAR        GetVar;
   FASTBOOT_PLATFORM_OEM_COMMAND   DoOemCommand;
+  FASTBOOT_PLATFORM_FLASH_EX      FlashPartitionEx;
 } FASTBOOT_PLATFORM_PROTOCOL;
 
 /* See sparse_format.h in AOSP  */

@@ -71,6 +71,8 @@ STATIC EFI_EVENT mFatalSendErrorEvent;
 #define FASTBOOT_STRING_MAX_LENGTH  256
 #define FASTBOOT_COMMAND_MAX_LENGTH 64
 
+#define FILL_BUF_SIZE               1024
+
 STATIC
 VOID
 HandleGetVar (
@@ -80,7 +82,7 @@ HandleGetVar (
   CHAR8      Response[FASTBOOT_COMMAND_MAX_LENGTH + 1] = "OKAY";
   EFI_STATUS Status;
 
-  // Respond to getvar:version with 0.4 (version of Fastboot protocol)
+  // Respond to getvar:version with 0.5 (version of Fastboot protocol)
   if (!AsciiStrnCmp ("version", CmdArg, sizeof ("version") - 1 )) {
     SEND_LITERAL ("OKAY" ANDROID_FASTBOOT_VERSION);
   } else {
@@ -137,13 +139,83 @@ HandleDownload (
 }
 
 STATIC
+EFI_STATUS
+FlashSparseImage (
+  IN CHAR8         *PartitionName,
+  IN SPARSE_HEADER *SparseHeader
+  )
+{
+  EFI_STATUS        Status = EFI_SUCCESS;
+  UINTN             Chunk, Offset = 0, Index;
+  VOID             *Image;
+  CHUNK_HEADER     *ChunkHeader;
+  UINT32            FillBuf[FILL_BUF_SIZE];
+  CHAR16            OutputString[FASTBOOT_STRING_MAX_LENGTH];
+
+  Image = (VOID *)SparseHeader;
+  Image += SparseHeader->FileHeaderSize;
+  for (Chunk = 0; Chunk < SparseHeader->TotalChunks; Chunk++) {
+    ChunkHeader = (CHUNK_HEADER *)Image;
+    DEBUG ((DEBUG_INFO, "Chunk #%d - Type: 0x%x Size: %d TotalSize: %d Offset %d\n",
+            (Chunk+1), ChunkHeader->ChunkType, ChunkHeader->ChunkSize,
+            ChunkHeader->TotalSize, Offset));
+    Image += sizeof (CHUNK_HEADER);
+    switch (ChunkHeader->ChunkType) {
+    case CHUNK_TYPE_RAW:
+      Status = mPlatform->FlashPartitionEx (
+                            PartitionName,
+                            Offset,
+                            ChunkHeader->ChunkSize * SparseHeader->BlockSize,
+                            Image
+                            );
+      if (EFI_ERROR (Status)) {
+        return Status;
+      }
+      Image += ChunkHeader->ChunkSize * SparseHeader->BlockSize;
+      Offset += ChunkHeader->ChunkSize * SparseHeader->BlockSize;
+      break;
+    case CHUNK_TYPE_FILL:
+      SetMem32 (FillBuf, FILL_BUF_SIZE * sizeof (UINT32), *(UINT32 *)Image);
+      Image += sizeof (UINT32);
+      for (Index = 0; Index < ChunkHeader->ChunkSize; Index++) {
+        Status = mPlatform->FlashPartitionEx (
+                              PartitionName,
+                              Offset,
+                              SparseHeader->BlockSize,
+                              FillBuf
+                              );
+        if (EFI_ERROR (Status)) {
+          return Status;
+        }
+        Offset += SparseHeader->BlockSize;
+      }
+      break;
+    case CHUNK_TYPE_DONT_CARE:
+      Offset += ChunkHeader->ChunkSize * SparseHeader->BlockSize;
+      break;
+    default:
+      UnicodeSPrint (
+        OutputString,
+        sizeof (OutputString),
+        L"Unsupported Chunk Type:0x%x\n",
+        ChunkHeader->ChunkType
+        );
+      mTextOut->OutputString (mTextOut, OutputString);
+      break;
+    }
+  }
+  return Status;
+}
+
+STATIC
 VOID
 HandleFlash (
   IN CHAR8 *PartitionName
   )
 {
-  EFI_STATUS  Status;
-  CHAR16      OutputString[FASTBOOT_STRING_MAX_LENGTH];
+  EFI_STATUS        Status;
+  CHAR16            OutputString[FASTBOOT_STRING_MAX_LENGTH];
+  SPARSE_HEADER    *SparseHeader;
 
   // Build output string
   UnicodeSPrint (OutputString, sizeof (OutputString), L"Flashing partition %a\r\n", PartitionName);
@@ -155,21 +227,47 @@ HandleFlash (
     return;
   }
 
-  Status = mPlatform->FlashPartition (
-                        PartitionName,
-                        mNumDataBytes,
-                        mDataBuffer
-                        );
-  if (Status == EFI_NOT_FOUND) {
-    SEND_LITERAL ("FAILNo such partition.");
-    mTextOut->OutputString (mTextOut, L"No such partition.\r\n");
-  } else if (EFI_ERROR (Status)) {
-    SEND_LITERAL ("FAILError flashing partition.");
-    mTextOut->OutputString (mTextOut, L"Error flashing partition.\r\n");
-    DEBUG ((EFI_D_ERROR, "Couldn't flash image:  %r\n", Status));
+  SparseHeader = (SPARSE_HEADER *)mDataBuffer;
+  if (SparseHeader->Magic == SPARSE_HEADER_MAGIC) {
+    DEBUG ((DEBUG_INFO, "Sparse Magic: 0x%x Major: %d Minor: %d fhs: %d chs: %d bs: %d tbs: %d tcs: %d checksum: %d \n",
+                SparseHeader->Magic, SparseHeader->MajorVersion, SparseHeader->MinorVersion,  SparseHeader->FileHeaderSize,
+                SparseHeader->ChunkHeaderSize, SparseHeader->BlockSize, SparseHeader->TotalBlocks,
+                SparseHeader->TotalChunks, SparseHeader->ImageChecksum));
+    if (SparseHeader->MajorVersion != 1) {
+        DEBUG ((DEBUG_ERROR, "Sparse image version %d.%d not supported.\n",
+                    SparseHeader->MajorVersion, SparseHeader->MinorVersion));
+        return;
+    }
+    Status = FlashSparseImage (PartitionName, SparseHeader);
+    if (Status == EFI_NOT_FOUND) {
+      SEND_LITERAL ("FAILNo such partition.");
+      mTextOut->OutputString (mTextOut, L"No such partition.\r\n");
+    } else if (EFI_ERROR (Status)) {
+        SEND_LITERAL ("FAILError flashing partition.");
+        mTextOut->OutputString (mTextOut, L"Error flashing partition.\r\n");
+        DEBUG ((EFI_D_ERROR, "Couldn't flash image.\n"));
+    } else {
+      mTextOut->OutputString (mTextOut, L"Done.\r\n");
+      SEND_LITERAL ("OKAY");
+    }
   } else {
-    mTextOut->OutputString (mTextOut, L"Done.\r\n");
-    SEND_LITERAL ("OKAY");
+    Status = mPlatform->FlashPartition (
+                          PartitionName,
+                          mNumDataBytes,
+                          mDataBuffer
+                          );
+    Status = FlashSparseImage (PartitionName, SparseHeader);
+    if (Status == EFI_NOT_FOUND) {
+      SEND_LITERAL ("FAILNo such partition.");
+      mTextOut->OutputString (mTextOut, L"No such partition.\r\n");
+    } else if (EFI_ERROR (Status)) {
+        SEND_LITERAL ("FAILError flashing partition.");
+        mTextOut->OutputString (mTextOut, L"Error flashing partition.\r\n");
+        DEBUG ((EFI_D_ERROR, "Couldn't flash image.\n"));
+    } else {
+      mTextOut->OutputString (mTextOut, L"Done.\r\n");
+      SEND_LITERAL ("OKAY");
+    }
   }
 }
 
